@@ -1,0 +1,8 @@
+The python package "QMapTools" contains some routines to help quantifying ElementalMaps as acquired by STEM/EELS or STEM/EDS systems.
+
+This repository contains:
+
+qmaptools		Python 2.7 package
+examples		Some python files that make use of this package
+
+Documentation is still sparse... feel free to email me.
