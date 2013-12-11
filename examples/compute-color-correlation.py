@@ -62,6 +62,7 @@ parser = argparse.ArgumentParser(description='Compute correlation coefficient fo
 parser.add_argument('infile', metavar='IMAGE.ext', nargs='+', type=argparse.FileType('r'), help='(.png|bmp|.gif|.jpg|.tif) file with RGB intensity.')
 parser.add_argument('--verbose', '-v', help="increase number of debug messages",action='count')
 parser.add_argument('--basename','-b',type=str,help="Filename of OUTFILEs. Required for multiple files to process.")
+parser.add_argument('--multipage',action="store_true",help="Put every plot on a separate page in the PDF.")
 parser.add_argument('--title',type=str,help="Main title string.")
 parser.add_argument('--radius',type=int, help="which radius for filtering (0 means - do not filter)",default=0)
 parser.add_argument('--resize',type=int, help="Resize incoming raw data to new size (nearest)",default=0)
@@ -84,7 +85,7 @@ parser_pca.add_argument('--colocation',action='store_true', help="Perform co-loc
 parser_pca.add_argument('--numbins',type=int, help="set dimensions for heatmap",default=25)
 
 # image options
-parser_overview = parser.add_argument_group("overview options")
+parser_overview = parser.add_argument_group("image options")
 parser_overview.add_argument('--haadf',action='store_true', help="include the STEM HAADF image.")
 parser_overview.add_argument('--haadfext',type=str, help="extension from the basename supplied: IMAGEpostfix.(jpg|png)", default="-HAADF")
 parser_overview.add_argument('--map',action='store_true', help="include the EDS/EELS map.")
@@ -121,7 +122,7 @@ if args.title:
 else:
     maintitle = ""
 
-if (not args.haadf) and (not args.map) and (not args.composite) and (not args.threshold):
+if (not args.haadf) and (not args.map) and (not args.composite) and (not args.threshold) and (not args.pca):
     raise parser.error("Either a HAADF, map, thresholdmap or composite must be included must be specified.")
 
 
@@ -157,6 +158,7 @@ all_g = np.array([])
 ############### MAIN
 # main loop to cycle over the files
 for file in args.infile:
+    mpl.rcParams.update({'font.size': 10})
     
     ############### Prep data structures, plots & pdf
     # we come in with a basename like: "13-08-21_#48_CoMn0.01_1"
@@ -281,6 +283,9 @@ for file in args.infile:
             
     elif args.threshold:
         draw_threshold(subplot_1st_center, r, g, b, threshold_r=args.cutoff, threshold_g=args.cutoff) 
+        
+    elif args.pca:
+        draw_pca(subplot_1st_center,r,g,logfile)
     
     #### 1st row: right
     subplot_1st_left = plt.subplot2grid((2,3),(0,2),aspect="equal")
@@ -299,10 +304,10 @@ for file in args.infile:
         #### left
         if args.colocation:
             draw_colocation(subplot_2nd_left,img)
-        elif args.pca:
-            draw_pca(subplot_2nd_left,r,g)
         elif args.powerspectrum:
             draw_powerspectrum(subplot_2nd_left,r,g,b)
+        elif args.pca:
+            draw_pca(subplot_2nd_left,r,g,logfile)
         else:
             draw_histogram(subplot_2nd_left,r,g,b)
         
@@ -323,7 +328,7 @@ for file in args.infile:
         if args.powerspectrum:
             draw_powerspectrum(subplot_2nd_center,r,g,b) #,cutoff=args.cutoff)
         elif args.pca:
-            draw_pca(subplot_2nd_center,r,g)
+            draw_pca(subplot_2nd_center,r,g,logfile)
         
         #### right
         subplot_2nd_right = plt.subplot2grid((2,3),(1,2),aspect="equal")
@@ -347,6 +352,43 @@ for file in args.infile:
     
     #plt.show()
     
+    if args.multipage:
+        mpl.rcParams.update({'font.size': 22})
+        if args.colocation:
+            f2 = plt.figure("colocation")
+            fullpageplot = f2.add_subplot(111)
+            
+            draw_colocation(fullpageplot,img)
+            
+            fullpageplot.set_title('')
+            f2.tight_layout()
+            f2.savefig(pdf,format='pdf',dpi=100)
+        if args.heatmap:
+            f2 = plt.figure("heatmap")
+            fullpageplot = f2.add_subplot(111)
+            
+            draw_heatmap(fullpageplot, r, g, label_x=args.red, label_y=args.green, numbins = args.numbins, conditioning_matrix = conditioning_matrix, enlarged=True)
+            
+            fullpageplot.set_title('')
+            f2.tight_layout()
+            f2.savefig(pdf,format='pdf',dpi=100)
+        if args.pca:
+            f2 = plt.figure("pca")
+            fullpageplot = f2.add_subplot(111)
+            
+            draw_pca(fullpageplot, r, g)
+            
+            f2.tight_layout()
+            f2.savefig(pdf,format='pdf',dpi=100)
+        if args.powerspectrum:
+            f2 = plt.figure("powerspec")
+            fullpageplot = f2.add_subplot(111)
+            
+            draw_powerspectrum(fullpageplot, r, g,b)
+            
+            fullpageplot.set_title('')
+            f2.tight_layout()
+            f2.savefig(pdf,format='pdf',dpi=100)
     plt.close("all")
     pdf.close()
 

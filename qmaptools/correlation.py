@@ -504,7 +504,7 @@ def draw_scatterplot(subplot,component_x,component_y,label_x="$A$",label_y="$B$"
     subplot.set_yticks([0,graph_max/2.0,graph_max])
     
 
-def draw_heatmap(subplot, component_x,component_y, label_x="$A$", label_y="$B$", normalized=True, cutoff=0, return_results=False,numbins=20,conditioning_matrix=np.ones((20,20))):
+def draw_heatmap(subplot, component_x,component_y, label_x="$A$", label_y="$B$", normalized=True, cutoff=0, contour=False, enlarged=False, return_results=False, numbins=20, conditioning_matrix=np.ones((20,20))):
     """Produce a heatmap-plot for a given set of two components. 
     
         subplot:        Subplot object to draw in.
@@ -513,6 +513,7 @@ def draw_heatmap(subplot, component_x,component_y, label_x="$A$", label_y="$B$",
         label_x:        Label for the component X to be placed on x-axis
         label_y:        Label for the component Y to be placed on y-axis
         normalized:     Scale intensities by count or to 0.1 scale - both x/y and colorbar.
+        countour:       Use countourplot instead of heatmap.
         cutoff:         Lowest intensity to show (0..255)
         return_array:   return the masked individual array (for mass processing)
     """
@@ -531,32 +532,42 @@ def draw_heatmap(subplot, component_x,component_y, label_x="$A$", label_y="$B$",
         label_prefix = "Absolute "
     
     # ignore the black background noise
-    masked_x = component_x[(component_x >= cutoff) & (component_y >= cutoff)].ravel() 
-    masked_y = component_y[(component_x >= cutoff) & (component_y >= cutoff)].ravel()
-    
-    
+    masked_x = component_x[(component_x >= cutoff) & (component_y >= cutoff)].flatten() 
+    masked_y = component_y[(component_x >= cutoff) & (component_y >= cutoff)].flatten()
     
     # create the 2D histogram
     heatmap, xedges, yedges = np.histogram2d(masked_x, masked_y, bins=numbins, range=[[0, graph_max], [0, graph_max]])
     
-    extent = [xedges[0], xedges[-1], yedges[0], yedges[-1]]
-    
     # apply a the conditioning matrix
     heatmap = np.multiply(heatmap,conditioning_matrix)    
-    # rotate to match the imshow style
-    heatmap = heatmap.transpose()[::-1]
+    
+    #heatmap[heatmap == 0] = "NaN"
+    # now we mask those out, to ignore them
+    #heatmap = np.ma.masked_invalid(heatmap)
     
     if normalized:
         heatmap = heatmap/heatmap.max()
         norm = plt.cm.colors.Normalize(vmin=0,vmax=1)
-    
-    # show the heatmap
-    qqq = subplot.imshow(heatmap ,cmap=plt.cm.jet, interpolation="nearest", aspect="equal", extent=extent, rasterized=True)
-
+        
+    if contour:
+        X, Y = 0.5*(xedges[1:]+xedges[:-1]), 0.5*(yedges[1:]+yedges[:-1])
+        qqq = subplot.contourf(X, Y, heatmap, cmap=plt.cm.jet)
+        #qqq = plt.pcolor(xedges, yedges, heatmap)
+        
+    else:
+        # rotate to match the imshow style
+        heatmap = heatmap.T[::-1]
+        extent = [xedges[0], xedges[-1],yedges[0], yedges[-1]]
+        # show the heatmap
+        qqq = subplot.imshow(heatmap ,cmap=plt.cm.jet, interpolation="nearest", aspect="equal", extent=extent, rasterized=True)
+        
     # place the colorbar
-    cbar = plt.colorbar(qqq,shrink=0.5) 
-    cbar.ax.tick_params(labelsize=10) #.ax.tick_params(axis='y', direction='out')
-    
+    if not enlarged:
+        cbar = plt.colorbar(qqq,shrink=0.5) 
+        cbar.ax.tick_params(labelsize=10) #.ax.tick_params(axis='y', direction='out')
+    else:
+        cbar = plt.colorbar(qqq)
+        
     # label & scale
     subplot.set_title("Heatmap analysis")
     subplot.autoscale_view(True, False, False)
@@ -575,7 +586,7 @@ def draw_heatmap(subplot, component_x,component_y, label_x="$A$", label_y="$B$",
         
 
 
-def draw_pca(subplot,component_x,component_y,return_results=False):
+def draw_pca(subplot,component_x,component_y,logfile=False,return_results=False):
     """Produce a heatmap-plot for a given set of two components. 
     
         subplot:        Subplot object to draw in.
@@ -613,8 +624,9 @@ def draw_pca(subplot,component_x,component_y,return_results=False):
     subplot.scatter(results.Y[:,0],results.Y[:,1],color="r",alpha=0.5,s=0.1,rasterized=True)
     
     subplot.set_title("$\Gamma_1$ %2.1f%% ($\sigma_1$ = %.3f)\n$\Gamma_2$ %2.1f%% ($\sigma_2$ = %.3f)" % (results.fracs[0]*100, results.sigma[0], results.fracs[1]*100, results.sigma[1]),fontsize=10)
-  
-    logfile.write("%.4f,%.4f,%.4f,%.4f,%.4f,%.4f,%.4f" % (center[0], center[1], angle, results.fracs[0],  results.sigma[0], results.fracs[1], results.sigma[1]))
+    
+    if logfile:
+        logfile.write("%.4f,%.4f,%.4f,%.4f,%.4f,%.4f,%.4f" % (center[0], center[1], angle, results.fracs[0],  results.sigma[0], results.fracs[1], results.sigma[1]))
   
     ## mark some stuff in the XY plot
     #subplot.plot( *zip( center, results.Wt.dot( np.array( [0, results.sigma[0] ] ) ) + center ), linewidth=1, color="g")
@@ -670,7 +682,7 @@ def draw_powerspectrum(subplot,r,g,b,cutoff=0):
     subplot.semilogy( r_psd1D, color="r",linewidth=2 )
     subplot.set_xlabel("Spatial frequency $k$ / $nm^{-1}$")
     subplot.set_ylabel("Power density / -")
-    subplot.set_xlim(0,130)
+    #subplot.set_xlim(0,130)
     
     if cutoff > 0:
         rx = np.copy(r)
@@ -727,7 +739,19 @@ def draw_threshold(subplot,r,g,b,threshold_r=0,threshold_g=0,threshold_b=0):
     
     subplot.imshow(temp,interpolation="bicubic",aspect="equal")
     
-def draw_colocation(subplot,img,label_r="$Mn$",label_g="$Co$",label_b="$O$",normalized=True,cutoff=1):
+def draw_colocation(subplot,img,label_r="$Mn$",label_g="$Co$",label_b="$O$",normalized=True,cutoff=70):
+    """Generate a probability of co-location plot.
+    
+    Calculates the percentage of which a given 'green' intensity also has 
+    'red' present.
+    
+    img:        PIL image object
+    label_r:    Element label for red channel
+    label_g:    Element label for green channel
+    label_b:    Element label for blue channel
+    normalized: Normalize axes
+    cutoff:     Absolute pixel intensity to count from (ignore noise)
+    """
     
     totalRedPixels = 0
     totalGreenPixels = 0
@@ -785,6 +809,13 @@ def draw_colocation(subplot,img,label_r="$Mn$",label_g="$Co$",label_b="$O$",norm
 def draw_eds(subplot):
     pass
 def draw_eels(subplot,file_basename,smooth):
+    """Generate a plot from EELS data saved by CSI.
+    Currently highlights just Co, Mn and O... generic code to be added.
+    
+    subplot:        Subplot object to draw in.
+    file_basename:  Filename (no suffix) to read from (adds .txt)
+    smooth:         Window size for Hanning type smoothing 
+    """
     data = pl.csv2rec(file_basename+".txt", delimiter="\t", names=["eV","raw","ev2","ref","ev3","bg","ev4","sign"])
 
     
