@@ -83,6 +83,8 @@ parser_pca.add_argument('--histogram',action='store_true', help="Include a histo
 parser_pca.add_argument('--cutoff',type=int, help="Cutoff value for noise (0..255)",default=70)
 parser_pca.add_argument('--colocation',action='store_true', help="Perform co-location analysis for pixels with value greater than cutoff")
 parser_pca.add_argument('--numbins',type=int, help="set dimensions for heatmap",default=25)
+parser_pca.add_argument('--inpaint',action='store_true', help="In-paint NaN values in heatmap")
+
 
 # image options
 parser_overview = parser.add_argument_group("image options")
@@ -291,7 +293,7 @@ for file in args.infile:
     subplot_1st_left = plt.subplot2grid((2,3),(0,2),aspect="equal")
     
     if args.heatmap:
-        draw_heatmap(subplot_1st_left, r, g, label_x=args.red, label_y=args.green, numbins = args.numbins, conditioning_matrix = conditioning_matrix)
+        draw_heatmap(subplot_1st_left, r, g, label_x=args.red, label_y=args.green, numbins = args.numbins, conditioning_matrix = conditioning_matrix, interpolate=args.inpaint)
     elif args.scatter:
         draw_scatterplot(subplot_1st_left, r, g, label_x=args.red, label_y=args.green ,color_dots=np.dstack((r,g,b)).reshape((-1,3)))
     
@@ -303,7 +305,7 @@ for file in args.infile:
         
         #### left
         if args.colocation:
-            draw_colocation(subplot_2nd_left,img)
+            draw_colocation(subplot_2nd_left,img,cutoff=args.cutoff)
         elif args.powerspectrum:
             draw_powerspectrum(subplot_2nd_left,r,g,b)
         elif args.pca:
@@ -358,7 +360,7 @@ for file in args.infile:
             f2 = plt.figure("colocation")
             fullpageplot = f2.add_subplot(111)
             
-            draw_colocation(fullpageplot,img)
+            draw_colocation(fullpageplot,img,cutoff=args.cutoff)
             
             fullpageplot.set_title('')
             f2.tight_layout()
@@ -376,7 +378,7 @@ for file in args.infile:
             f2 = plt.figure("pca")
             fullpageplot = f2.add_subplot(111)
             
-            draw_pca(fullpageplot, r, g)
+            draw_pca(fullpageplot, r, g,enlarged=True)
             
             f2.tight_layout()
             f2.savefig(pdf,format='pdf',dpi=100)

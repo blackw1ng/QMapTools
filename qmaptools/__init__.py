@@ -14,6 +14,7 @@ import numpy as np
 # bring submodules into package scope
 from .image_importer import *
 from .correlation import *
+from .inpaint import *
 
 # some basic definitions
 

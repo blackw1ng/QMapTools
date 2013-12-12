@@ -17,6 +17,7 @@ import datetime
 import re
 
 from .image_importer import *
+from .inpaint import *
 
 ############### Library functions
 def correlate1d(a,b):
@@ -378,7 +379,14 @@ def smooth(x,window_len=5,window='hanning'):
     return y[(window_len/2-1):-(window_len/2+1)]
 
 
-def do_correlation(r,g,b,logfile):
+def do_correlation(r,g,b,logfile=False):
+    """Calculation and log correlation metrics on given (r,g,b) image.
+    
+    r,g,b:     numpy array with pixel intensities (r,g or b)
+    logfile:   file pointer to logfile.
+    
+    TODO: Needs major re-write as this is just poor scrap code :(
+    """
     # apply std deviation correlation normalization
     rn = normalize(np.copy(r))
     gn = normalize(np.copy(g))
@@ -404,57 +412,69 @@ def do_correlation(r,g,b,logfile):
     if Has['r'] and Has['g']:
         temp = correlate1d(g,r)
         print "1d Correlation of g to r is cc: %.3f norm: %i zero: %i" % (temp, manhattan(g,r), zeronorm(g,r))
-        logfile.write("%.4f," % (temp))
+        if logfile:
+            logfile.write("%.4f," % (temp))
     
         rg = signal.fftconvolve(rn,gn[::-1, ::-1],mode="same")
         temp = float(rg.max()/gg.max())
         print "2d correlation of g to r is %.3f" % temp 
         cc2 += "rg = %2.1f%% " % (temp * 100)
-        logfile.write("%.4f," % (temp))
+        if logfile:
+            logfile.write("%.4f," % (temp))
     
         temp = compute_ssim(r,g)
         print "SSIM correlation of g to r is %.3f" % temp
         ssim += "rg = %2.1f%% " % (temp * 100)
-        logfile.write("%.4f," % (temp))
+        if logfile:
+            logfile.write("%.4f," % (temp))
     else:
-        logfile.write("NaN,NaN,NaN," % (temp))
+        if logfile:
+            logfile.write("NaN,NaN,NaN," % (temp))
         
     
     if Has['r'] and Has['b']:
         temp = correlate1d(r,b)
         print "1d Correlation of b to r is cc: %.3f norm: %i zero: %i" % (temp, manhattan(r,b), zeronorm(r,b))
-        logfile.write("%.4f," % (temp))
+        if logfile:
+            logfile.write("%.4f," % (temp))
         
         rb = signal.fftconvolve(rn,bn[::-1, ::-1],mode="same")
         temp = float(rb.max()/rr.max())
         print "2d correlation of b to r is %.3f" % temp
         cc2 += "rb = %2.1f%% " % (temp * 100)
-        logfile.write("%.4f," % (temp))
+        if logfile:
+            logfile.write("%.4f," % (temp))
     
         temp = compute_ssim(r,b)
         print "SSIM correlation of b to r is %.3f" % temp
         ssim += "rb = %2.1f%%" % (temp * 100)
-        logfile.write("%.4f," % (temp))
+        if logfile:
+            logfile.write("%.4f," % (temp))
     else:
-        logfile.write("NaN,NaN,NaN," % (temp))
+        if logfile:
+            logfile.write("NaN,NaN,NaN," % (temp))
     
     if Has['g'] and Has['b']:    
         temp = correlate1d(g,b)
         print "1d Correlation of g to b is cc: %.3f norm: %i zero: %i" % (temp, manhattan(g,b), zeronorm(g,b))
-        logfile.write("%.4f," % (temp))
+        if logfile:
+            logfile.write("%.4f," % (temp))
         
         gb = signal.fftconvolve(gn,bn[::-1, ::-1],mode="same")
         temp = float(gb.max()/gg.max())
         print "2d correlation of g to b is %.3f" % temp
         cc2 += "gb = %2.1f%% " % (temp * 100)
-        logfile.write("%.4f," % (temp))
+        if logfile:
+            logfile.write("%.4f," % (temp))
     
         temp = compute_ssim(b,g)    
         print "SSIM correlation of g to b is %.3f" % temp
         ssim += "gb = %2.1f%%" % (temp * 100)
-        logfile.write("%.4f," % (temp))
+        if logfile:
+            logfile.write("%.4f," % (temp))
     else:
-        logfile.write("NaN,NaN,NaN," % (temp))
+        if logfile:
+            logfile.write("NaN,NaN,NaN," % (temp))
 
     return(cc2+"\n"+ssim)
 
@@ -504,7 +524,7 @@ def draw_scatterplot(subplot,component_x,component_y,label_x="$A$",label_y="$B$"
     subplot.set_yticks([0,graph_max/2.0,graph_max])
     
 
-def draw_heatmap(subplot, component_x,component_y, label_x="$A$", label_y="$B$", normalized=True, cutoff=0, contour=False, enlarged=False, return_results=False, numbins=20, conditioning_matrix=np.ones((20,20))):
+def draw_heatmap(subplot, component_x,component_y, label_x="$A$", label_y="$B$", normalized=True, cutoff=0, contour=False, enlarged=False, interpolate=False, remove_zero=False,return_results=False, numbins=20, conditioning_matrix=np.ones((20,20))):
     """Produce a heatmap-plot for a given set of two components. 
     
         subplot:        Subplot object to draw in.
@@ -541,10 +561,19 @@ def draw_heatmap(subplot, component_x,component_y, label_x="$A$", label_y="$B$",
     # apply a the conditioning matrix
     heatmap = np.multiply(heatmap,conditioning_matrix)    
     
-    #heatmap[heatmap == 0] = "NaN"
-    # now we mask those out, to ignore them
-    #heatmap = np.ma.masked_invalid(heatmap)
     
+    
+    
+    # now we mask those out, to ignore them
+    if remove_zero or interpolate:
+        # now we remove the zeros
+        heatmap[heatmap == 0] = "NaN"
+        heatmap = np.ma.masked_invalid(heatmap)
+        
+    if interpolate:
+        heatmap = replace_nans(heatmap, 2, 0.1, 1,"idw")
+
+        
     if normalized:
         heatmap = heatmap/heatmap.max()
         norm = plt.cm.colors.Normalize(vmin=0,vmax=1)
@@ -586,7 +615,7 @@ def draw_heatmap(subplot, component_x,component_y, label_x="$A$", label_y="$B$",
         
 
 
-def draw_pca(subplot,component_x,component_y,logfile=False,return_results=False):
+def draw_pca(subplot,component_x,component_y,logfile=False,return_results=False,enlarged=False):
     """Produce a heatmap-plot for a given set of two components. 
     
         subplot:        Subplot object to draw in.
@@ -599,8 +628,8 @@ def draw_pca(subplot,component_x,component_y,logfile=False,return_results=False)
     
     # set plot
     subplot.set_aspect(1)
-    subplot.set_xlim(-3,3)
-    subplot.set_ylim(-3,3)
+    subplot.set_xlim(-5,5)
+    subplot.set_ylim(-5,5)
     
     ## TODO: implement 3D mode...
     #pca_plot = Axes3D(f)
@@ -616,17 +645,26 @@ def draw_pca(subplot,component_x,component_y,logfile=False,return_results=False)
     rot90 = np.array([[0,-1],[1,0]])
     angle = np.arccos( results.Wt[0][0] )*180 / np.pi
     
-    print "\tPCA center at (%.3f,%.3f): f1 %.1f s1 %.2f, f2 %.1f s2 %.2f, rot %.1f" % (center[0],center[1],results.fracs[0]*100,results.fracs[1]*100,results.sigma[0], results.sigma[1],angle)
+    print "\tPCA center at (%.3f,%.3f): f1 %.1f s1 %.2f, f2 %.1f s2 %.2f, rot %.1f" % (center[0],center[1], results.fracs[0]*100,results.sigma[0]/255.0, results.fracs[1]*100, results.sigma[1]/255.0,angle)
     
     #contributions = np.cumsum(results.fracs)/np.sum(result.fracs)
     
     #subplot.scatter(results.a[:,0],results.a[:,1], color="b",alpha=0.5,s=2,rasterized=True)
-    subplot.scatter(results.Y[:,0],results.Y[:,1],color="r",alpha=0.5,s=0.1,rasterized=True)
     
-    subplot.set_title("$\Gamma_1$ %2.1f%% ($\sigma_1$ = %.3f)\n$\Gamma_2$ %2.1f%% ($\sigma_2$ = %.3f)" % (results.fracs[0]*100, results.sigma[0], results.fracs[1]*100, results.sigma[1]),fontsize=10)
+    if enlarged:
+        fs = 16
+        ps= 6
+    else:
+        fs = 10
+        ps = 0.1
+        subplot.set_title("$\Gamma_1$ %2.1f%% ($\sigma_1$ = %.3f)\n$\Gamma_2$ %2.1f%% ($\sigma_2$ = %.3f)" % (results.fracs[0]*100, results.sigma[0]/255.0, results.fracs[1]*100, results.sigma[1]/255.0),fontsize=fs)
+        
+    subplot.scatter(results.Y[:,0], results.Y[:,1], color="r", alpha=0.5,s=ps,rasterized=True)
+    
+   
     
     if logfile:
-        logfile.write("%.4f,%.4f,%.4f,%.4f,%.4f,%.4f,%.4f" % (center[0], center[1], angle, results.fracs[0],  results.sigma[0], results.fracs[1], results.sigma[1]))
+        logfile.write("%.4f,%.4f,%.4f,%.4f,%.4f,%.4f,%.4f" % (center[0], center[1], angle, results.fracs[0],  results.sigma[0]/255.0, results.fracs[1], results.sigma[1]/255.0))
   
     ## mark some stuff in the XY plot
     #subplot.plot( *zip( center, results.Wt.dot( np.array( [0, results.sigma[0] ] ) ) + center ), linewidth=1, color="g")
@@ -753,24 +791,28 @@ def draw_colocation(subplot,img,label_r="$Mn$",label_g="$Co$",label_b="$O$",norm
     cutoff:     Absolute pixel intensity to count from (ignore noise)
     """
     
-    totalRedPixels = 0
-    totalGreenPixels = 0
     R_count = np.zeros(256)
     G_count = np.zeros(256)
     
     numbins = 32
-
+    
     #totalRedPixels = len(r[r>red_cutoff])
 
     for pixel in img.getdata():
-        if pixel[0] >= cutoff:
-            totalRedPixels += 1
-            R_count[pixel[1]] += 1
-        G_count[pixel[1]] += 1
+        
+        if ((pixel[0] == 0) and (pixel[1] == 0)):
+            # reject pure black
+            continue
+            
+        else:
+            # check if red value is higher than cutoff (noise)
+            if pixel[0] > cutoff:
+                # count red HIT at the green intensity of the pixel
+                R_count[pixel[1]] += 1
+            
+            # count green HIT at the green intensity of the pixel
+            G_count[pixel[1]] += 1
     
-        #if pixel[1] >= cutoff:
-        totalGreenPixels += 1
-
     if normalized:
         graph_max = 1.0
         label_prefix = "Normalized "
@@ -778,26 +820,44 @@ def draw_colocation(subplot,img,label_r="$Mn$",label_g="$Co$",label_b="$O$",norm
         graph_max = 256.0
         label_prefix = "Absolute "
     
-    # construct plot x-axis
-    x_axis = np.arange(0,graph_max,graph_max/float(numbins))
+    #print R_count[0:10].astype(int)
+    #print G_count[0:10].astype(int)
     
-    # now normalize by pixels in that very bin
-    results = np.array(R_count,dtype=float) / np.array(G_count,dtype=float)
-    # the data now also has a good number of "NaN" values from division by 0...
-    # and now we also make the 100% ones to NaN
-    results[results == 1] = "NaN"
-    # now we mask those out, to ignore them
-    results = np.ma.masked_invalid(results)
+    #results = np.array(R_count,dtype=float) / np.array(G_count,dtype=float)
     
     # now re-binning in a fast way: from a 256 array down to a 256/numbins array
     # by: reshaping it to an array with x: numbins-columns and y: 256/numbins
-    # values which then get averaged...
-    results = results.reshape([numbins, len(results)/numbins]).mean(1)
+    # values which then get summed...
+    R_binned = R_count.reshape([numbins, len(R_count) / numbins]).sum(1) 
+    G_binned = G_count.reshape([numbins, len(G_count) / numbins]).sum(1) 
+    #results = results.reshape([numbins, len(results)/numbins]).mean(1)
+    
+    # now reject small number statistics
+    #R_binned[G_binned < 30] = "NaN"
+    
+    # now normalize by pixels in that very bin
+    results = R_binned / G_binned
+    
+    #print results
+    
+    # the data now also has a good number of "NaN" values from division by 0...
+    # and now we also make the 100% ones to NaN
+    #results[results == 1] = "NaN"
+    # now we mask those out, to ignore them
+    results = np.ma.masked_invalid(results)
+    
+    # construct plot x-axis
+    x_axis = np.arange(0,graph_max,graph_max/float(numbins))
     
     # and plot
-    subplot.bar(x_axis, results, facecolor="r", edgecolor='none')
+    subplot.bar(x_axis, results, facecolor="r", edgecolor='none',width=1/float(numbins))
     
-    #subplot.bar(np.arange(0,256, 1 ), results, facecolor="r", width=16, edgecolor='none')
+    masked = np.zeros(numbins)
+    masked[np.ma.getmaskarray(results)] = 1
+    subplot.bar(x_axis, masked, facecolor="#cccccc", edgecolor='none',width=1/float(numbins))
+    
+    # unbinned raw.
+    #subplot.bar(np.arange(0,256, 1 ), np.array(R_count,dtype=float) / np.array(G_count,dtype=float), facecolor="r", width=0.1, edgecolor='none') 
     
     subplot.set_aspect("auto")
     subplot.set_title("Colocation probability")
