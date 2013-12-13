@@ -1,0 +1,11 @@
+[Tt]humbs.db
+*.DS_Store
+
+# compiled lib files
+*.pyc
+
+#Subversion files
+.svn
+
+# Office Temp Files
+~$*
