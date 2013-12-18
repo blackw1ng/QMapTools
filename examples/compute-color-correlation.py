@@ -171,6 +171,8 @@ for file in args.infile:
     
     if args.radius > 0:
         file_basename += "_r=%i" % (args.radius)
+        
+        
     if maintitle != '':
         file_title = "%s (%s)" % (maintitle, file_basename)
     else:
@@ -207,11 +209,11 @@ for file in args.infile:
     # filter if needed
     if args.radius > 0:
         print "Analysis of a blurred image with r = %i" % (args.radius)
-        img = img.filter(MyGaussianBlur(radius=args.radius))
-        logfile.write("%s," %(file_basename))        
+        img = img.filter(MyGaussianBlur(radius=args.radius)).convert('RGB')
+        logfile.write("Blurred %s r=%i," %(file_basename,args.radius))       
     else:
         print "Analyzing raw image"
-        logfile.write("Blurred %s r=%i," %(file_basename,args.radius))
+        logfile.write("%s," %(file_basename)) 
         
     # import channels by color
     arr = PIL2array(img)
@@ -229,6 +231,10 @@ for file in args.infile:
         Has["g"] = True
     if b.max() > 40:
         Has["b"] = True  
+    
+    # add pixels to overall analysis array
+    all_r = np.concatenate((all_r, r.flatten()))
+    all_g = np.concatenate((all_g, g.flatten()))
     
     ############### ANALYSIS WORKER ROUTINE  
     
@@ -369,7 +375,7 @@ for file in args.infile:
             f2 = plt.figure("heatmap")
             fullpageplot = f2.add_subplot(111)
             
-            draw_heatmap(fullpageplot, r, g, label_x=args.red, label_y=args.green, numbins = args.numbins, conditioning_matrix = conditioning_matrix, enlarged=True)
+            draw_heatmap(fullpageplot, r, g, label_x=args.red, label_y=args.green, numbins = args.numbins, conditioning_matrix = conditioning_matrix, enlarged=True, interpolate=args.inpaint)
             
             fullpageplot.set_title('')
             f2.tight_layout()
@@ -397,81 +403,68 @@ for file in args.infile:
 
 
 # now run the overall analysis on ALL files
-if False: #len(args.infile) > 1:
+if len(args.infile) > 1:
+    
+    print "Overall analysis"
     
     # prepare the summary file
     pdf = PdfPages(basename+"-summary.pdf")
+    mpl.rcParams.update({'font.size': 16})
+    
     
     d = pdf.infodict()
     d['Title'] = file_title
     d['Author'] = "Sebastian Werner"
     d['Subject'] = 'Data analysis for EELS/EDS maps'
     d['CreationDate'] = datetime.datetime.today()
-
-    #prepare conditionition matrix - twice the resolution
-    numbins *= 2
+ 
+        
+    f3 = plt.figure()
+    #f3.suptitle('Overall analysis (%s)' % (maintitle), fontsize=20)
+    
+    plot = f3.add_subplot(111)
+    
+    
+    ### prepare conditionition matrix
+    numbins = args.numbins
     # now eliminate some part from the heatmap
     conditioning_matrix = np.ones((numbins,numbins))
     a = 0
     b = 0
-    r = 8
+    r = 2
     y,x = np.ogrid[-a:numbins-a, -b:numbins-b]
     mask = x*x + y*y <= r*r
-    conditioning_matrix[mask] = 0.1
+    conditioning_matrix[mask] = 0.0
     mask1 = x*x + y*y <= (r+1)**2
-    conditioning_matrix[mask ^ mask1] = 0.25
+    conditioning_matrix[mask ^ mask1] = 0.1
     mask2 = x*x + y*y <= (r+2)**2
-    conditioning_matrix[mask1 ^ mask2] = 0.5
+    conditioning_matrix[mask1 ^ mask2] = 0.4
     mask3 = x*x + y*y <= (r+3)**2
-    conditioning_matrix[mask2 ^ mask3] = 0.75      
+    conditioning_matrix[mask2 ^ mask3] = 0.6
     
-
-    heatmap, xedges, yedges = np.histogram2d(all_r, all_g, bins=numbins, range=[[0, 1], [0, 1]])
-    f3 = plt.figure()
-    f3.suptitle('Overall analysis (%s)' % (maintitle), fontsize=20)
-    heat_plot = f3.add_subplot(121)
-
-    # apply a the conditioning matrix
-    heatmap = np.multiply(heatmap,conditioning_matrix)    
-
-    extent = [xedges[0], xedges[-1], yedges[0], yedges[-1]]
-    norm = plt.cm.colors.Normalize(vmin=0,vmax=1)
-
-    # rotate to match the imshow style
-    heatmap = heatmap.transpose()[::-1]
-    qqq = heat_plot.imshow(heatmap/heatmap.max(),cmap=plt.cm.jet, interpolation="nearest", aspect="equal", extent=extent, rasterized=True)#, norm=norm)
-
-    cbar = plt.colorbar(qqq,shrink=0.6) #.ax.tick_params(axis='y', direction='out')
-    cbar.ax.tick_params(labelsize=10) 
-
-    heat_plot.autoscale_view(True, False, False)
-    heat_plot.set_xlabel("Relative $Mn$ intensity")
-    heat_plot.set_xlim(0,1)
-    heat_plot.set_xticks([0,0.5,1])#,1)
-    heat_plot.set_ylabel("Relative $Co$ intensity")
-    heat_plot.set_ylim(0,1)
-    heat_plot.set_yticks([0,0.5,1.0])#,1)
-    heat_plot.plot([0,1],[0,1],"k-",linewidth=0.5,alpha=0.5)
-
-    # Principal component analysis
-    pca_plot = f3.add_subplot(122)
-    pca_plot.set_aspect(1)
-    pca_plot.set_xlim(-3,3)
-    pca_plot.set_ylim(-3,3)
-    results = mpl.mlab.PCA(np.array([all_r, all_g]).T )
-
+    
+    draw_heatmap(plot, all_r, all_g, label_x=args.red, label_y=args.green, numbins = numbins, conditioning_matrix = conditioning_matrix, interpolate=args.inpaint, enlarged=True)
+ 
+    f3.savefig(pdf,dpi=300,format='pdf')
+    
+    work_vector =np.hstack((all_r.reshape(-1,1),all_g.reshape(-1,1)))
+    
+    f4 = plt.figure()
+    #f4.suptitle('Overall analysis (%s)' % (maintitle), fontsize=20)
+    
+    
+    right_plot = f4.add_subplot(111)
+    draw_colocation(right_plot,work_vector,cutoff=args.cutoff)
+    
+    results = mpl.mlab.PCA(work_vector)
     center = results.mu
     rot90 = np.array([[0,-1],[1,0]])
     angle = np.arccos( results.Wt[0][0] )*180 / np.pi
-
     print "PCA center at (%.3f,%.3f): f1 %.1f s1 %.2f, f2 %.1f s2 %.2f, rot %.1f" % (center[0],center[1],results.fracs[0]*100,results.fracs[1]*100,results.sigma[0], results.sigma[1],angle)
-
-    pca_plot.scatter(results.Y[:,0],results.Y[:,1],color="r",alpha=0.5,s=0.2,rasterized=True)
-    pca_plot.set_title("$\Gamma_1$ %2.1f%% ($\sigma_1$ = %.3f)\n$\Gamma_2$ %2.1f%% ($\sigma_2$ = %.3f)" % (results.fracs[0]*100, results.sigma[0], results.fracs[1]*100, results.sigma[1]),fontsize=10)
+    #right_plot.set_title("$\Gamma_1$ %2.1f%% ($\sigma_1$ = %.3f)\n$\Gamma_2$ %2.1f%% ($\sigma_2$ = %.3f)" % (results.fracs[0]*100, results.sigma[0]/255.0, results.fracs[1]*100, results.sigma[1]/255.0),fontsize=12)
 
     plt.draw()
-    f3.tight_layout()
-    f3.savefig(pdf,dpi=300,format='pdf')
+    f4.savefig(pdf,dpi=300,format='pdf')
     pdf.close()
 
 logfile.close()

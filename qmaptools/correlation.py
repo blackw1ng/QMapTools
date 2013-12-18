@@ -555,29 +555,27 @@ def draw_heatmap(subplot, component_x,component_y, label_x="$A$", label_y="$B$",
     masked_x = component_x[(component_x >= cutoff) & (component_y >= cutoff)].flatten() 
     masked_y = component_y[(component_x >= cutoff) & (component_y >= cutoff)].flatten()
     
+    
     # create the 2D histogram
     heatmap, xedges, yedges = np.histogram2d(masked_x, masked_y, bins=numbins, range=[[0, graph_max], [0, graph_max]])
     
     # apply a the conditioning matrix
     heatmap = np.multiply(heatmap,conditioning_matrix)    
     
-    
-    
-    
-    # now we mask those out, to ignore them
-    if remove_zero or interpolate:
-        # now we remove the zeros
-        heatmap[heatmap == 0] = "NaN"
-        heatmap = np.ma.masked_invalid(heatmap)
-        
-    if interpolate:
-        heatmap = replace_nans(heatmap, 2, 0.1, 1,"idw")
-
-        
     if normalized:
         heatmap = heatmap/heatmap.max()
         norm = plt.cm.colors.Normalize(vmin=0,vmax=1)
-        
+    
+    # now we mask those out, to ignore them
+    if remove_zero:
+        # now we remove the zeros
+        heatmap[heatmap == 0] = "NaN"
+        heatmap = np.ma.masked_invalid(heatmap)
+    
+    if interpolate:
+        heatmap[heatmap == 0] = "NaN"
+        heatmap = replace_nans(heatmap, 4, 0.1, 1,"idw")
+    
     if contour:
         X, Y = 0.5*(xedges[1:]+xedges[:-1]), 0.5*(yedges[1:]+yedges[:-1])
         qqq = subplot.contourf(X, Y, heatmap, cmap=plt.cm.jet)
@@ -590,12 +588,7 @@ def draw_heatmap(subplot, component_x,component_y, label_x="$A$", label_y="$B$",
         # show the heatmap
         qqq = subplot.imshow(heatmap ,cmap=plt.cm.jet, interpolation="nearest", aspect="equal", extent=extent, rasterized=True)
         
-    # place the colorbar
-    if not enlarged:
-        cbar = plt.colorbar(qqq,shrink=0.5) 
-        cbar.ax.tick_params(labelsize=10) #.ax.tick_params(axis='y', direction='out')
-    else:
-        cbar = plt.colorbar(qqq)
+    
         
     # label & scale
     subplot.set_title("Heatmap analysis")
@@ -606,6 +599,14 @@ def draw_heatmap(subplot, component_x,component_y, label_x="$A$", label_y="$B$",
     subplot.set_ylabel(label_prefix+label_y+" intensity")
     subplot.set_ylim(0,graph_max)
     subplot.set_yticks([0,graph_max/2.0,graph_max])#,1)
+    
+    # place the colorbar
+    if not enlarged:
+        cbar = plt.colorbar(qqq,shrink=0.6) 
+        #cbar.ax.tick_params(labelsize=10) #.ax.tick_params(axis='y', direction='out')
+    else:
+        cbar = plt.colorbar(qqq)
+    
     
     # plot the parity line in the end
     subplot.plot([0,graph_max],[0,graph_max],"w-",linewidth=0.5,alpha=0.5)
@@ -694,8 +695,10 @@ def draw_image(subplot,file_basename,which="haadf",postfix=""):
         try:
             temp = Image.open(file_basename+postfix+".jpg")
         except IOError:
-            print which+' file '+file_basename+postfix+".(png|jpg) not found."
-            raise
+            return
+            #temp = 0
+            #print which+' file '+file_basename+postfix+".(png|jpg) not found."
+            
     
     subplot.set_title(image_title)
     subplot.set_axis_off()
@@ -798,7 +801,12 @@ def draw_colocation(subplot,img,label_r="$Mn$",label_g="$Co$",label_b="$O$",norm
     
     #totalRedPixels = len(r[r>red_cutoff])
 
-    for pixel in img.getdata():
+    try:
+        data = img.getdata()
+    except:
+        data = img
+    
+    for pixel in data:
         
         if ((pixel[0] == 0) and (pixel[1] == 0)):
             # reject pure black
@@ -859,7 +867,7 @@ def draw_colocation(subplot,img,label_r="$Mn$",label_g="$Co$",label_b="$O$",norm
     # unbinned raw.
     #subplot.bar(np.arange(0,256, 1 ), np.array(R_count,dtype=float) / np.array(G_count,dtype=float), facecolor="r", width=0.1, edgecolor='none') 
     
-    subplot.set_aspect("auto")
+    subplot.set_aspect("equal")
     subplot.set_title("Colocation probability")
     subplot.set_xlim(0,graph_max)
     subplot.set_ylim(0,1)

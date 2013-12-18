@@ -13,7 +13,7 @@ DTYPEi = np.int32
 
 #@cython.boundscheck(False) # turn of bounds-checking for entire function
 #@cython.wraparound(False) # turn of bounds-checking for entire function
-def replace_nans(array, max_iter, tol,kernel_size=1,method='localmean'):
+def replace_nans(array, max_iter, tol , kernel_size=1,method='localmean'):
     """Replace NaN elements in an array using an iterative image inpainting algorithm.
 The algorithm is the following:
 1) For each element in the input array, replace it by a weighted average
