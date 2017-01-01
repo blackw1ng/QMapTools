@@ -27,6 +27,7 @@ import operator
 from matplotlib.backends.backend_pdf import PdfPages
 import datetime
 import re
+from matplotlib.ticker import NullFormatter
 from qmaptools import *
 
 
@@ -63,6 +64,7 @@ parser.add_argument('infile', metavar='IMAGE.ext', nargs='+', type=argparse.File
 parser.add_argument('--verbose', '-v', help="increase number of debug messages",action='count')
 parser.add_argument('--basename','-b',type=str,help="Filename of OUTFILEs. Required for multiple files to process.")
 parser.add_argument('--multipage',action="store_true",help="Put every plot on a separate page in the PDF.")
+parser.add_argument('--summarize',action="store_true",help="Force producind the summary PDF even when just a single file is there.")
 parser.add_argument('--title',type=str,help="Main title string.")
 parser.add_argument('--radius',type=int, help="which radius for filtering (0 means - do not filter)",default=0)
 parser.add_argument('--resize',type=int, help="Resize incoming raw data to new size (nearest)",default=0)
@@ -373,6 +375,7 @@ for file in args.infile:
             f2.savefig(pdf,format='pdf',dpi=100)
         if args.heatmap:
             f2 = plt.figure("heatmap")
+            
             fullpageplot = f2.add_subplot(111)
             
             draw_heatmap(fullpageplot, r, g, label_x=args.red, label_y=args.green, numbins = args.numbins, conditioning_matrix = conditioning_matrix, enlarged=True, interpolate=args.inpaint)
@@ -403,7 +406,7 @@ for file in args.infile:
 
 
 # now run the overall analysis on ALL files
-if len(args.infile) > 1:
+if len(args.infile) > 1 or args.summarize:
     
     print "Overall analysis"
     
@@ -419,22 +422,40 @@ if len(args.infile) > 1:
     d['CreationDate'] = datetime.datetime.today()
  
         
-    f3 = plt.figure()
+    f3 = plt.figure(figsize=(8,8))
     #f3.suptitle('Overall analysis (%s)' % (maintitle), fontsize=20)
     
-    plot = f3.add_subplot(111)
     
+    nullfmt   = NullFormatter()         # no labels
+
+    # definitions for the axes
+    left = bottom = 0.1
+    width = height = 0.6
+    spacing = 0.06
+    bottom_h = left_h = left + width + spacing
+    height_h = width_h = 1 - (bottom+height+spacing+spacing)
+    
+    rect_hist = [left, bottom, width, height]
+    rect_histx = [left, bottom_h, width, height_h]
+    rect_histy = [left_h, bottom, width_h, height]
+    rect_cbar = [left_h + width_h/3.0, bottom_h, 0.02 , height_h]
+                
+    fullpageplot = f3.add_axes(rect_hist)
+    hist_x_plot = f3.add_axes(rect_histx)
+    hist_y_plot = f3.add_axes(rect_histy)
+    ax_cbar = f3.add_axes(rect_cbar)
     
     ### prepare conditionition matrix
     numbins = args.numbins
+    
     # now eliminate some part from the heatmap
     conditioning_matrix = np.ones((numbins,numbins))
     a = 0
     b = 0
-    r = 2
+    r = 1
     y,x = np.ogrid[-a:numbins-a, -b:numbins-b]
     mask = x*x + y*y <= r*r
-    conditioning_matrix[mask] = 0.0
+    conditioning_matrix[mask] = "NaN"
     mask1 = x*x + y*y <= (r+1)**2
     conditioning_matrix[mask ^ mask1] = 0.1
     mask2 = x*x + y*y <= (r+2)**2
@@ -442,9 +463,25 @@ if len(args.infile) > 1:
     mask3 = x*x + y*y <= (r+3)**2
     conditioning_matrix[mask2 ^ mask3] = 0.6
     
+    cutoff = 1
     
-    draw_heatmap(plot, all_r, all_g, label_x=args.red, label_y=args.green, numbins = numbins, conditioning_matrix = conditioning_matrix, interpolate=args.inpaint, enlarged=True)
- 
+    draw_heatmap(fullpageplot, all_r, all_g, label_x=args.red, label_y=args.green, numbins = numbins, conditioning_matrix = conditioning_matrix, interpolate=args.inpaint, composite=True,cbaxes=ax_cbar)
+    fullpageplot.set_title('')
+
+    n_x, bins, patches = hist_x_plot.hist(all_r[(all_r >= cutoff) & (all_g >= cutoff)], bins=numbins, normed=True,facecolor="r")
+    n_y, bins, patches = hist_y_plot.hist(all_g[(all_r >= cutoff) & (all_g >= cutoff)], bins=numbins, normed=True, orientation='horizontal',facecolor="g")
+    
+    
+    hist_x_plot.xaxis.set_major_formatter(nullfmt)
+    hist_x_plot.set_yticks([0, np.around(np.amax(n_x),decimals=2) ] )#,1)
+    hist_x_plot.tick_params(bottom="off",top="off")
+    hist_y_plot.yaxis.set_major_formatter(nullfmt)
+    hist_y_plot.set_xticks([0, np.around(np.amax(n_y),decimals=2) ])
+    hist_y_plot.tick_params(left="off",right="off")
+        
+    hist_x_plot.set_xlim( 1,255 )
+    hist_y_plot.set_ylim( 1,255 )
+    
     f3.savefig(pdf,dpi=300,format='pdf')
     
     work_vector =np.hstack((all_r.reshape(-1,1),all_g.reshape(-1,1)))
@@ -453,8 +490,8 @@ if len(args.infile) > 1:
     #f4.suptitle('Overall analysis (%s)' % (maintitle), fontsize=20)
     
     
-    right_plot = f4.add_subplot(111)
-    draw_colocation(right_plot,work_vector,cutoff=args.cutoff)
+    fullpageplot = f4.add_subplot(111)
+    draw_colocation(fullpageplot,work_vector,cutoff=args.cutoff)
     
     results = mpl.mlab.PCA(work_vector)
     center = results.mu
@@ -462,7 +499,7 @@ if len(args.infile) > 1:
     angle = np.arccos( results.Wt[0][0] )*180 / np.pi
     print "PCA center at (%.3f,%.3f): f1 %.1f s1 %.2f, f2 %.1f s2 %.2f, rot %.1f" % (center[0],center[1],results.fracs[0]*100,results.fracs[1]*100,results.sigma[0], results.sigma[1],angle)
     #right_plot.set_title("$\Gamma_1$ %2.1f%% ($\sigma_1$ = %.3f)\n$\Gamma_2$ %2.1f%% ($\sigma_2$ = %.3f)" % (results.fracs[0]*100, results.sigma[0]/255.0, results.fracs[1]*100, results.sigma[1]/255.0),fontsize=12)
-
+    fullpageplot.set_title('')
     plt.draw()
     f4.savefig(pdf,dpi=300,format='pdf')
     pdf.close()

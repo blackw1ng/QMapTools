@@ -16,6 +16,7 @@ from matplotlib.backends.backend_pdf import PdfPages
 import datetime
 import re
 
+
 from .image_importer import *
 from .inpaint import *
 
@@ -524,7 +525,7 @@ def draw_scatterplot(subplot,component_x,component_y,label_x="$A$",label_y="$B$"
     subplot.set_yticks([0,graph_max/2.0,graph_max])
     
 
-def draw_heatmap(subplot, component_x,component_y, label_x="$A$", label_y="$B$", normalized=True, cutoff=0, contour=False, enlarged=False, interpolate=False, remove_zero=False,return_results=False, numbins=20, conditioning_matrix=np.ones((20,20))):
+def draw_heatmap(subplot, component_x,component_y, label_x="$A$", label_y="$B$", normalized=True, cutoff=0, contour=False, enlarged=False,composite=False, interpolate=False, remove_zero=False,return_results=False, numbins=20, conditioning_matrix=np.ones((20,20)),cbaxes=None):
     """Produce a heatmap-plot for a given set of two components. 
     
         subplot:        Subplot object to draw in.
@@ -563,9 +564,9 @@ def draw_heatmap(subplot, component_x,component_y, label_x="$A$", label_y="$B$",
     heatmap = np.multiply(heatmap,conditioning_matrix)    
     
     if normalized:
-        heatmap = heatmap/heatmap.max()
+        heatmap = heatmap/np.ma.masked_invalid(heatmap).max()
         norm = plt.cm.colors.Normalize(vmin=0,vmax=1)
-    
+        
     # now we mask those out, to ignore them
     if remove_zero:
         # now we remove the zeros
@@ -575,6 +576,8 @@ def draw_heatmap(subplot, component_x,component_y, label_x="$A$", label_y="$B$",
     if interpolate:
         heatmap[heatmap == 0] = "NaN"
         heatmap = replace_nans(heatmap, 4, 0.1, 1,"idw")
+    
+    #print heatmap
     
     if contour:
         X, Y = 0.5*(xedges[1:]+xedges[:-1]), 0.5*(yedges[1:]+yedges[:-1])
@@ -588,11 +591,10 @@ def draw_heatmap(subplot, component_x,component_y, label_x="$A$", label_y="$B$",
         # show the heatmap
         qqq = subplot.imshow(heatmap ,cmap=plt.cm.jet, interpolation="nearest", aspect="equal", extent=extent, rasterized=True)
         
-    
-        
     # label & scale
     subplot.set_title("Heatmap analysis")
-    subplot.autoscale_view(True, False, False)
+    #subplot.autoscale_view(True, False, False)
+    subplot.set_aspect("equal")
     subplot.set_xlabel(label_prefix+label_x+" intensity")
     subplot.set_xlim(0,graph_max)
     subplot.set_xticks([0,graph_max/2.0,graph_max])#,1)
@@ -601,11 +603,14 @@ def draw_heatmap(subplot, component_x,component_y, label_x="$A$", label_y="$B$",
     subplot.set_yticks([0,graph_max/2.0,graph_max])#,1)
     
     # place the colorbar
-    if not enlarged:
-        cbar = plt.colorbar(qqq,shrink=0.6) 
-        #cbar.ax.tick_params(labelsize=10) #.ax.tick_params(axis='y', direction='out')
-    else:
+    if enlarged:
         cbar = plt.colorbar(qqq)
+    elif composite:
+        cbar = plt.colorbar(qqq, cax=cbaxes, orientation="vertical", ticks=[0,0.25,0.5,0.75,1])
+        cbar.set_label("Probability")
+    else:
+        cbar = plt.colorbar(qqq,shrink=0.6) 
+         #cbar.ax.tick_params(labelsize=10) #.ax.tick_params(axis='y', direction='out')
     
     
     # plot the parity line in the end
